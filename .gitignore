@@ -1,0 +1,17 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Generated live prediction input
+shared_data/latest_input.json
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

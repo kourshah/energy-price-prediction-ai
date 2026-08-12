@@ -1,9 +1,17 @@
 import os
+import sys
+from pathlib import Path
+
+# Add repository root to Python's import path so this app can import live_data.
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
 from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
 from live_data.pipeline import prepare_latest_model_input
+
 
 DEFAULT_API_URL = os.getenv("PREDICTION_API_URL", "http://localhost:8000/predict")
 

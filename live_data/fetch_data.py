@@ -54,34 +54,41 @@ def _get(
     url: str,
     params: dict | None = None,
     timeout: int = 60,
+    retries: int = 3,
 ) -> requests.Response:
     """
-    Simple HTTP GET.
+    HTTP GET with retries for temporary network failures.
 
-    No custom Session.
-    No retry adapter.
-    No special backoff logic.
+    The request is attempted up to `retries` times before a
+    LiveDataError is raised.
     """
 
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            headers={
-                "User-Agent": "OilPricePredictionProject/2.3"
-            },
-            timeout=timeout,
-        )
+    last_error = None
 
-        response.raise_for_status()
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers={
+                    "User-Agent": "OilPricePredictionProject/2.3"
+                },
+                timeout=timeout,
+            )
 
-        return response
+            response.raise_for_status()
+            return response
 
-    except requests.exceptions.RequestException as exc:
-        raise LiveDataError(
-            f"HTTP request failed for {url}: {exc}"
-        ) from exc
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            print(
+                f"Request attempt {attempt}/{retries} failed: {exc}"
+            )
 
+    raise LiveDataError(
+        f"HTTP request failed after {retries} attempts "
+        f"for {url}: {last_error}"
+    )
 
 def fetch_fred_series(
     series_id: str,

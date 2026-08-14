@@ -27,7 +27,7 @@ def prepare_latest_model_input(history_calendar_days: int = 500):
             "Natural_Gas": "FRED DHHNGSP",
             "USD_Index": "FRED DTWEXBGS",
             "VIX": "FRED VIXCLS",
-            "Gold": "XAUS XAU/USD",
+            "Gold": "yfinance GC=F (COMEX Gold futures)",
         },
     }
 

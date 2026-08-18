@@ -19,7 +19,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from predict import FEATURES, LOOKBACK, predict_oil_price
+from predict import FEATURES, LOOKBACK, predict_oil_price, get_explanation_inputs
+from explain import explain_prediction
 
 
 DEFAULT_INPUT_PATH = BASE_DIR / "shared_data" / "latest_input.json"
@@ -114,8 +115,16 @@ def predict(request: PredictionRequest):
             )
 
     try:
+        predicted = predict_oil_price(request.data)
+        explain_inputs = get_explanation_inputs(request.data)
+        explanation = explain_prediction(
+            predicted_price=predicted,
+            current_price=explain_inputs["current_price"],
+            top_features=explain_inputs["top_features"],
+        )
         return {
-            "predicted_oil_price": predict_oil_price(request.data)
+            "predicted_oil_price": predicted,
+            "explanation": explanation,
         }
     except Exception as exc:
         raise HTTPException(
@@ -130,6 +139,12 @@ def predict_latest():
 
     try:
         predicted = predict_oil_price(payload["data"])
+        explain_inputs = get_explanation_inputs(payload["data"])
+        explanation = explain_prediction(
+            predicted_price=predicted,
+            current_price=explain_inputs["current_price"],
+            top_features=explain_inputs["top_features"],
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -138,6 +153,7 @@ def predict_latest():
 
     return {
         "predicted_oil_price": predicted,
+        "explanation": explanation,
         "input_shape": payload.get("input_shape", [60, 26]),
         "first_input_date": payload.get("first_input_date"),
         "latest_input_date": payload.get("latest_input_date"),

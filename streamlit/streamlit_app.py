@@ -13,7 +13,7 @@ import streamlit as st
 from live_data.pipeline import prepare_latest_model_input
 
 
-DEFAULT_API_URL = os.getenv("PREDICTION_API_URL", "https://oil-price-api-3-0.onrender.com/predict")
+   DEFAULT_API_URL = os.getenv("PREDICTION_API_URL", "https://oil-price-api-v2.onrender.com/predict")
 
 st.set_page_config(page_title="Oil Price Prediction", page_icon="📈", layout="wide")
 

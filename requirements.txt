@@ -7,3 +7,4 @@ tensorflow
 joblib
 fastapi
 uvicorn
+google-genai

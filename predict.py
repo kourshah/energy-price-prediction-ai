@@ -175,6 +175,41 @@ def predict_oil_price(input_data) -> float:
 
 
 # ----------------------------------------------------------
+# EXPLANATION HELPER (for explain.py)
+# ----------------------------------------------------------
+
+# A small, interpretable subset of FEATURES to surface in the LLM explanation.
+# Picked because they're intuitive to a non-technical reader — momentum,
+# volatility, and the gold/oil ratio are easy to explain in one phrase.
+EXPLAIN_FEATURE_SUBSET = [
+    "Momentum_7",
+    "Momentum_21",
+    "Volatility_21",
+    "VIX_Spike",
+    "Gold_Oil_Ratio",
+]
+
+
+def get_explanation_inputs(input_data) -> dict:
+    """
+    Pulls the current (most recent) raw Oil_Price plus a handful of
+    interpretable feature values from the latest row of the input matrix.
+    Use this to build the arguments for explain.explain_prediction().
+
+    Returns
+    -------
+    dict with keys: "current_price", "top_features"
+    """
+    frame = _prepare_input(input_data)
+    latest_row = frame.iloc[-1]
+
+    return {
+        "current_price": float(latest_row["Oil_Price"]),
+        "top_features": {name: float(latest_row[name]) for name in EXPLAIN_FEATURE_SUBSET},
+    }
+
+
+# ----------------------------------------------------------
 # OPTIONAL QUICK CHECK
 # ----------------------------------------------------------
 

@@ -45,7 +45,8 @@ def predict(latest_60, api_url):
     value = result.get("predicted_oil_price", result.get("prediction"))
     if value is None:
         raise KeyError("Prediction field missing from API response.")
-    return float(value)
+    explanation = result.get("explanation")
+    return float(value), explanation
 
 st.markdown("""
 <div class="hero">
@@ -71,9 +72,9 @@ if st.button("Generate New Prediction", type="primary", use_container_width=True
             st.write(f"Prepared: {latest_60.shape[0]} rows × {latest_60.shape[1]} features")
             st.write(f"Latest usable market date: {metadata['latest_input_date']}")
             st.write("Sending matrix to FastAPI…")
-            price = predict(latest_60, api_url)
+            price, explanation = predict(latest_60, api_url)
             status.update(label="Prediction completed", state="complete", expanded=False)
-        st.session_state.update(prediction=price, metadata=metadata, latest_60=latest_60.copy(),
+        st.session_state.update(prediction=price, explanation=explanation, metadata=metadata, latest_60=latest_60.copy(),
                                 generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     except requests.exceptions.ConnectionError:
         st.error("Could not connect to the API. For local testing, make sure Docker is running on port 8000.")
@@ -96,6 +97,19 @@ if "prediction" in st.session_state:
     a.metric("Latest market-data date", str(metadata["latest_input_date"]))
     b.metric("Input window", "60 days")
     c.metric("Model features", "26")
+
+    explanation = st.session_state.get("explanation")
+    if explanation:
+        with st.expander("💡 Why this forecast?", expanded=True):
+            st.write(explanation.get("summary", ""))
+            drivers = explanation.get("key_drivers") or []
+            if drivers:
+                st.markdown("**Key drivers:**")
+                for driver in drivers:
+                    st.markdown(f"- {driver}")
+            if explanation.get("confidence_note"):
+                st.caption(explanation["confidence_note"])
+
 
     # Feature 0 is Oil_Price in the trained 26-feature model.
     hist = pd.DataFrame({"Oil price": pd.to_numeric(latest_60.iloc[:,0], errors="coerce").values})

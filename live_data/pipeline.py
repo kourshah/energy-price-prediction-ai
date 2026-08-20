@@ -23,8 +23,8 @@ def prepare_latest_model_input(history_calendar_days: int = 500):
         "latest_input_date": engineered_df.iloc[-1]["Date"].date().isoformat(),
         "input_shape": [60, 26],
         "sources": {
-            "Oil_Price": "FRED DCOILWTICO",
-            "Natural_Gas": "FRED DHHNGSP",
+            "Oil_Price": "yfinance CL=F (WTI Crude futures)",
+            "Natural_Gas": "yfinance NG=F (Henry Hub Natural Gas futures)",
             "USD_Index": "FRED DTWEXBGS",
             "VIX": "FRED VIXCLS",
             "Gold": "yfinance GC=F (COMEX Gold futures)",

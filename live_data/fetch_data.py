@@ -1,19 +1,35 @@
 """
 live_data/fetch_data.py
 
-PRODUCTION FIX -- switched from FRED's unofficial chart-export CSV
-endpoint to FRED's official, documented REST API.
+UPDATE -- Oil_Price and Natural_Gas moved from FRED to yfinance.
 
-Why the previous version was unreliable:
+Why: DCOILWTICO and DHHNGSP are labeled "Daily" on FRED, but both are
+EIA-sourced spot-price series that FRED only re-batches into new
+observations roughly once every 7-8 days (check either series' own
+FRED page -- "Next Release Date" runs about a week after "Updated").
+Every date in between produces no new row, so these two features could
+go stale for up to a week even though the series is dated daily.
+
+USD_Index (DTWEXBGS) and VIX (VIXCLS) do NOT have this problem -- they
+come from different publishers (Federal Reserve H.10 release and CBOE,
+not EIA) and update same-day. Both stay on FRED, unchanged.
+
+Oil_Price and Natural_Gas now come from yfinance (tickers CL=F and
+NG=F), the same library and pattern already used for Gold (GC=F) --
+reusing an existing, already-working data source rather than
+introducing a new one. yfinance reflects each trading session directly,
+with no publication-batching delay.
+
+Why the FRED transport itself was rewritten (background, still
+applies to USD_Index/VIX):
 `https://fred.stlouisfed.org/graph/fredgraph.csv` is the CSV-export
 endpoint behind FRED's website *graphs* -- built to feed browser chart
 widgets, not documented or rate-limit-guaranteed as a public API. It is
 a known target for bot-mitigation against traffic from cloud/datacenter
 IP ranges (exactly what Streamlit Community Cloud's outbound IPs look
 like). That mitigation typically holds the connection open and never
-responds, rather than cleanly rejecting -- which produces exactly a
-"Read timed out" rather than a clean error, and explains why the same
-code sometimes worked and sometimes hung.
+responds, rather than cleanly rejecting -- which produces a
+"Read timed out" rather than a clean error.
 
 The fix: `https://api.stlouisfed.org/fred/series/observations` is
 FRED's actual documented, supported API for automated/programmatic
@@ -23,6 +39,7 @@ instead of silent hangs.
 Setup required
 --------------
 1. Get a free FRED API key: https://fredaccount.stlouisfed.org/apikeys
+   (still needed -- USD_Index and VIX remain on FRED)
 2. Set it as an environment variable / Streamlit secret named FRED_API_KEY
    - Local / Docker: export FRED_API_KEY=your_key_here
    - Streamlit Community Cloud: add FRED_API_KEY under
@@ -30,14 +47,14 @@ Setup required
 
 Sources
 -------
-FRED (official API):
-- DCOILWTICO -> Oil_Price
-- DHHNGSP    -> Natural_Gas
-- DTWEXBGS   -> USD_Index
-- VIXCLS     -> VIX
+FRED (official API) -- same-day updates, no batching delay:
+- DTWEXBGS -> USD_Index
+- VIXCLS   -> VIX
 
-Stooq (CSV export, unchanged from the earlier fix):
-- XAU/USD daily history -> Gold
+yfinance -- direct per-trading-session data, no publication delay:
+- CL=F -> Oil_Price   (WTI Crude futures)
+- NG=F -> Natural_Gas (Henry Hub Natural Gas futures)
+- GC=F -> Gold        (COMEX Gold futures)
 """
 
 from __future__ import annotations
@@ -58,13 +75,19 @@ from urllib3.util.retry import Retry
 socket.setdefaulttimeout(20)
 
 FRED_API_URL = "https://api.stlouisfed.org/fred/series/observations"
-STOOQ_GOLD_URL = "https://stooq.com/q/d/l/"
 
+# Only series that update same-day stay on FRED.
 FRED_SERIES = {
-    "Oil_Price": "DCOILWTICO",
-    "Natural_Gas": "DHHNGSP",
     "USD_Index": "DTWEXBGS",
     "VIX": "VIXCLS",
+}
+
+# Series that were batching-delayed on FRED (Oil_Price, Natural_Gas),
+# plus Gold, all come from yfinance instead.
+YFINANCE_TICKERS = {
+    "Oil_Price": "CL=F",
+    "Natural_Gas": "NG=F",
+    "Gold": "GC=F",
 }
 
 
@@ -117,8 +140,8 @@ def fetch_fred_series(
 ) -> pd.DataFrame:
     """
     Download one FRED series via the official observations API,
-    already filtered server-side to `start_date` onward (this API
-    supports date filtering reliably, unlike the old CSV endpoint).
+    already filtered server-side to `start_date` onward. Used only for
+    USD_Index and VIX, which publish same-day (no batching delay).
     """
     print(f"Downloading FRED {series_id} -> {output_column} (official API) ...")
 
@@ -169,36 +192,51 @@ def fetch_fred_series(
     return df
 
 
-def fetch_gold_xauusd(start_date: date) -> pd.DataFrame:
-       """Download daily gold price history using yfinance (COMEX Gold futures, GC=F)."""
-       import yfinance as yf
+def fetch_yfinance_series(
+    ticker: str,
+    output_column: str,
+    start_date: date,
+) -> pd.DataFrame:
+    """
+    Download one series from yfinance -- used for Oil_Price (CL=F),
+    Natural_Gas (NG=F), and Gold (GC=F). Reflects each trading session
+    directly, with no publication-batching delay like FRED/EIA has for
+    these particular series.
+    """
+    import yfinance as yf
 
-       print("Downloading Gold (GC=F, COMEX futures) via yfinance ...")
+    print(f"Downloading {output_column} ({ticker}) via yfinance ...")
 
-       ticker = yf.Ticker("GC=F")
-       hist = ticker.history(start=start_date.isoformat())
+    hist = yf.Ticker(ticker).history(start=start_date.isoformat())
 
-       if hist.empty:
-           raise LiveDataError("yfinance returned no data for GC=F (Gold).")
+    if hist.empty:
+        raise LiveDataError(f"yfinance returned no data for {ticker} ({output_column}).")
 
-       df = hist.reset_index()[["Date", "Close"]].rename(columns={"Close": "Gold"})
-       df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
-       df["Gold"] = pd.to_numeric(df["Gold"], errors="coerce")
+    df = hist.reset_index()[["Date", "Close"]].rename(columns={"Close": output_column})
+    df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+    df[output_column] = pd.to_numeric(df[output_column], errors="coerce")
 
-       df = df.dropna().sort_values("Date").reset_index(drop=True)
+    df = (
+        df.dropna()
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
 
-       if df.empty:
-           raise LiveDataError("Gold data was empty after cleaning.")
+    if df.empty:
+        raise LiveDataError(f"{output_column} data was empty after cleaning.")
 
-       print(f"  OK: Gold (GC=F) -> {len(df)} rows, latest={df['Date'].max().date()}")
-       return df
+    print(f"  OK: {output_column} ({ticker}) -> {len(df)} rows, latest={df['Date'].max().date()}")
+    return df
 
 
 def fetch_raw_market_data(history_calendar_days: int = 500) -> pd.DataFrame:
     """
     Download enough raw market history to build the latest complete
-    60 x 26 model input. Unchanged in structure/output from before --
-    only the FRED transport underneath changed.
+    60 x 26 model input.
+
+    Oil_Price, Natural_Gas, and Gold come from yfinance (per-session,
+    no batching delay). USD_Index and VIX come from FRED's official API
+    (same-day publishers, no delay issue).
     """
     if history_calendar_days < 250:
         raise ValueError("history_calendar_days must be at least 250.")
@@ -212,10 +250,14 @@ def fetch_raw_market_data(history_calendar_days: int = 500) -> pd.DataFrame:
     print()
 
     frames = []
+
+    # Oil_Price, Natural_Gas, Gold -- yfinance, same-session data
+    for output_column, ticker in YFINANCE_TICKERS.items():
+        frames.append(fetch_yfinance_series(ticker, output_column, start_date))
+
+    # USD_Index, VIX -- FRED official API, same-day publishers
     for output_column, series_id in FRED_SERIES.items():
         frames.append(fetch_fred_series(series_id, output_column, start_date))
-
-    frames.append(fetch_gold_xauusd(start_date))
 
     print()
     print("Merging market variables ...")
@@ -264,3 +306,4 @@ if __name__ == "__main__":
     print(df.tail())
     print()
     print("Shape:", df.shape)
+

@@ -42,6 +42,7 @@ End-to-end deep-learning system that forecasts the next-day **WTI** (West Texas 
 - Framework: TensorFlow / Keras
 - Optimizer: Adam · Loss: MSE
 - Training: chronological 80/20 split (no shuffling, no look-ahead leakage), EarlyStopping (patience 15), ReduceLROnPlateau (factor 0.5, patience 7)
+- Model selection: a Transformer model was also tested; the LSTM gave clearly better results and was selected.
 
 ## Results (held-out test period)
 
